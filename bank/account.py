@@ -1,5 +1,7 @@
 """Банковские счета: обычный и сберегательный."""
 
+from decimal import ROUND_HALF_UP, Decimal
+
 from bank.money import Money
 
 
@@ -102,3 +104,53 @@ class BankAccount:
             f"{type(self).__name__}({self._owner!r}, {self._number!r}, "
             f"balance={self._balance})"
         )
+
+
+class SavingsAccount(BankAccount):
+    """Сберегательный счёт с неснижаемым остатком и процентами.
+
+    Переопределяет проверку снятия: после операции на счёте должно
+    остаться не меньше неснижаемого остатка.
+    """
+
+    def __init__(
+        self,
+        owner: str,
+        number: str,
+        min_balance: Money,
+        rate_percent: str = "0",
+    ) -> None:
+        super().__init__(owner, number, min_balance.currency)
+        self._min_balance = min_balance
+        self._rate = Decimal(rate_percent)
+        if self._rate < 0:
+            raise ValueError("ставка не может быть отрицательной")
+
+    @property
+    def min_balance(self) -> Money:
+        """Неснижаемый остаток."""
+        return self._min_balance
+
+    @property
+    def rate_percent(self) -> Decimal:
+        """Ставка начисления процентов, % за период."""
+        return self._rate
+
+    def add_interest(self) -> Money:
+        """Начислить проценты за период и вернуть начисленную сумму.
+
+        Проценты округляются до копейки по правилу «половина вверх».
+        """
+        interest = Decimal(self.balance.kopecks) * self._rate / 100
+        kopecks = int(interest.quantize(Decimal(1), ROUND_HALF_UP))
+        amount = Money(kopecks, self.currency)
+        if kopecks > 0:
+            self._apply("проценты", amount)
+        return amount
+
+    def _check_can_withdraw(self, amount: Money) -> None:
+        """Не дать опустить баланс ниже неснижаемого остатка."""
+        if self.balance - amount < self._min_balance:
+            raise InsufficientFundsError(
+                f"нельзя опустить баланс ниже {self._min_balance}"
+            )
